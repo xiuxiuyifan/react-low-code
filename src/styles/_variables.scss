@@ -1,0 +1,10 @@
+@mixin flex-center {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+@mixin page-container {
+  @include flex-center;
+  min-height: 100vh;
+}
