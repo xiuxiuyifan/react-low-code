@@ -1,6 +1,12 @@
-.edit-wrapper{
+.edit-wrapper {
     display: flex;
-    justify-content: space-between;
+    flex-direction: column;
     width: 100%;
     height: 100%;
+}
+
+.main {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
 }

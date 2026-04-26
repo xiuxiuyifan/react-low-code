@@ -86,16 +86,36 @@ export interface ICanvas {
 // ==================== Store 类型 ====================
 export interface EditStoreState {
   canvas: ICanvas;
-  selectedComponentKey: number | null;
+  selectedComponentKeys: number[]; // 当前选中的组件 key 列表（支持多选）
+  zoom: number;  // 缩放比例，默认 100
+  showCanvasSizeEditor: boolean;  // 是否显示画布尺寸编辑器
+  history: {
+    past: ICanvas[];
+    future: ICanvas[];
+  };
 }
 
 export type EditStoreAction = {
   addCmp: (cmp: Omit<AnyComponent, "key">) => void;
   deleteCmp: (key: number) => void;
+  deleteSelectedCmps: () => void; // 删除所有选中的组件
   updateCmp: (key: number, data: Partial<AnyComponent>) => void;
   updateCmpProps: (key: number, props: Record<string, any>) => void;
   updateCmpStyle: (key: number, style: Partial<ComponentStyle>) => void;
-  selectCmp: (key: number | null) => void;
+  batchUpdateCmpStyle: (updates: { key: number; style: Partial<ComponentStyle> }[]) => void; // 批量更新样式
+  selectCmp: (key: number, multi?: boolean) => void; // multi=true 时切换选中状态
+  clearSelection: () => void; // 清空选中
+  setZoom: (zoom: number) => void;  // 设置缩放比例
+  updateCanvasStyle: (style: Partial<ICanvas["style"]>) => void;  // 更新画布尺寸
+  setShowCanvasSizeEditor: (show: boolean) => void;  // 显示/隐藏画布尺寸编辑器
+  moveCmpToTop: (key: number) => void;  // 将组件移到最顶层
+  moveCmpToBottom: (key: number) => void;  // 将组件移到最底层
+  moveCmpUp: (key: number) => void;  // 上移一层（数组索引 +1）
+  moveCmpDown: (key: number) => void;  // 下移一层（数组索引 -1）
+  alignCmp: (key: number, align: "centerX" | "centerY" | "top" | "bottom" | "left" | "right") => void; // 对齐画布
+  recordHistory: () => void; // 记录当前画布快照到历史栈
+  undo: () => void; // 撤销
+  redo: () => void; // 重做
 };
 
 export interface IEditStore extends EditStoreState, EditStoreAction {}

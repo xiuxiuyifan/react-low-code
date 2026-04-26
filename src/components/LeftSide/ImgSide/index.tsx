@@ -63,11 +63,13 @@ export default function ImgSide() {
             draggable="true"
             onDragStart={(e) => onDragStart(e, { ...item, type: isImgComponent })}
           >
-            {item.props.src ? (
-              <img src={item.props.src} alt={item.props.alt} />
-            ) : (
-              <div style={{ width: "100%", height: "100%", background: item.style.backgroundColor as string }} />
-            )}
+            <div className={leftSideStyles.preview}>
+              {item.props.src ? (
+                <img src={item.props.src} alt={item.props.alt} />
+              ) : (
+                <div style={{ width: "80%", height: "60%", background: item.style.backgroundColor as string, borderRadius: '8px' }} />
+              )}
+            </div>
             <div className={leftSideStyles.desc}>{item.name}</div>
           </li>
         ))}

@@ -4,11 +4,11 @@ import type { TextComponent, ImageComponent, ButtonComponent } from "@/store/edi
 import styles from "./index.module.scss";
 
 export default function Right() {
-  const { canvas, selectedComponentKey, updateCmpProps, updateCmpStyle } = useEditStore();
+  const { canvas, selectedComponentKeys, updateCmpProps, updateCmpStyle, recordHistory } = useEditStore();
 
-  const selectedCmp = canvas.cmps.find((c) => c.key === selectedComponentKey);
+  const selectedCmp = canvas.cmps.find((c) => c.key === selectedComponentKeys[0]);
 
-  if (!selectedCmp) {
+  if (selectedComponentKeys.length === 0) {
     return (
       <div className={styles.right}>
         <div className={styles.empty}>请选择组件</div>
@@ -16,12 +16,24 @@ export default function Right() {
     );
   }
 
+  if (selectedComponentKeys.length > 1) {
+    return (
+      <div className={styles.right}>
+        <div className={styles.title}>属性面板</div>
+        <Divider />
+        <div className={styles.empty}>已选中 {selectedComponentKeys.length} 个组件</div>
+      </div>
+    );
+  }
+
   const handlePropsChange = (key: string, value: any) => {
-    updateCmpProps(selectedCmp.key, { [key]: value });
+    recordHistory();
+    updateCmpProps(selectedCmp!.key, { [key]: value });
   };
 
   const handleStyleChange = (key: string, value: any) => {
-    updateCmpStyle(selectedCmp.key, { [key]: value });
+    recordHistory();
+    updateCmpStyle(selectedCmp!.key, { [key]: value });
   };
 
   return (

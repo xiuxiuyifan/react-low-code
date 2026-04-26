@@ -103,7 +103,7 @@ export default function TextSide() {
             draggable="true"
             onDragStart={(e) => onDragStart(e, { ...item, type: isTextComponent })}
           >
-            <div style={item.style}>
+            <div className={leftSideStyles.preview} style={item.style}>
               {item.props.value.replace("双击编辑", "")}
             </div>
             <div className={leftSideStyles.desc}>{item.name}</div>

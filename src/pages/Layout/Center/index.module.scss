@@ -1,52 +1,425 @@
 .center {
   display: flex;
-  justify-content: center;
+  flex-direction: column;
   flex: 1;
-  text-align: center;
   height: 100%;
-  padding-top: 60px;
+  padding-top: 108px;
+  background: linear-gradient(135deg, #f5f7fa 0%, #e4e8ec 100%);
+  overflow: hidden;
+
+  .toolbar {
+    position: fixed;
+    top: 108px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 8px 16px;
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(10px);
+    border-radius: 12px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+    z-index: 100;
+
+    .zoomControls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .zoomInput {
+      display: flex;
+      align-items: center;
+    }
+  }
+
+  .canvasWrapper {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding: 108px 20px 20px;
+    overflow: auto;
+  }
+
   .canvas {
     position: relative;
     border: solid 1px #dddddd;
-    box-shadow: #ccc 1px 1px 20px;
-    transform-origin: 50% 0%;
+    box-shadow: 0 8px 40px rgba(0, 0, 0, 0.12);
+    transform-origin: 50% 0;
+    background: #ffffff;
+    transition: box-shadow 0.3s ease;
+
+    &:hover {
+      box-shadow: 0 12px 50px rgba(0, 0, 0, 0.15);
+    }
   }
 
-  .cmps {
+  // 选中组件包装器
+  .selectedWrapper {
+    // 选中边框
+    &::before {
+      content: '';
+      position: absolute;
+      inset: -2px;
+      border: 2px solid #0057ff;
+      border-radius: 2px;
+      pointer-events: none;
+      z-index: 10;
+    }
+  }
+
+  // 锚点样式
+  .anchor {
     position: absolute;
-    overflow: hidden;
+    width: 10px;
+    height: 10px;
+    background: #fff;
+    border: 2px solid #0057ff;
+    border-radius: 50%;
+    z-index: 11;
+    transition: transform 0.15s ease;
+
+    &:hover {
+      transform: scale(1.3);
+      background: #0057ff;
+    }
   }
-  .zoom {
-    $size: 30px;
 
-    position: fixed;
-    right: 400px;
-    bottom: 20px;
+  // 四个角的锚点
+  .anchorTl {
+    top: -5px;
+    left: -5px;
+    cursor: nw-resize;
+  }
 
-    display: flex;
-    height: $size;
-    line-height: $size;
-    color: #500202;
+  .anchorTr {
+    top: -5px;
+    right: -5px;
+    cursor: ne-resize;
+  }
 
-    li {
-      padding: 0 4px;
+  .anchorBl {
+    bottom: -5px;
+    left: -5px;
+    cursor: sw-resize;
+  }
+
+  .anchorBr {
+    bottom: -5px;
+    right: -5px;
+    cursor: se-resize;
+  }
+
+  // 四边中点的锚点
+  .anchorTc {
+    top: -5px;
+    left: 50%;
+    transform: translateX(-50%);
+    cursor: n-resize;
+
+    &:hover {
+      transform: translateX(-50%) scale(1.3);
+      background: #0057ff;
     }
-    .icon {
-      $size: 30px;
-      width: $size;
-      height: $size;
-      border-radius: 50%;
-      background-color: #ffe331;
+  }
+
+  .anchorBc {
+    bottom: -5px;
+    left: 50%;
+    transform: translateX(-50%);
+    cursor: s-resize;
+
+    &:hover {
+      transform: translateX(-50%) scale(1.3);
+      background: #0057ff;
+    }
+  }
+
+  .anchorMl {
+    top: 50%;
+    left: -5px;
+    transform: translateY(-50%);
+    cursor: w-resize;
+
+    &:hover {
+      transform: translateY(-50%) scale(1.3);
+      background: #0057ff;
+    }
+  }
+
+  .anchorMr {
+    top: 50%;
+    right: -5px;
+    transform: translateY(-50%);
+    cursor: e-resize;
+
+    &:hover {
+      transform: translateY(-50%) scale(1.3);
+      background: #0057ff;
+    }
+  }
+
+  // 画布尺寸编辑器样式
+  .sizeEditor {
+    // 预设尺寸 - 图标+名称+尺寸
+    .presetList {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+    }
+
+    .presetItem {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      background: #fff;
+      border: 1px solid #e8e8e8;
+      border-radius: 8px;
       cursor: pointer;
-    }
-    .num {
-      font-size: 12px;
-      input {
-        display: inline-block;
-        width: 50px;
-        border: none;
-        text-align: center;
+      transition: all 0.2s ease;
+      box-sizing: border-box;
+
+      &:hover {
+        border-color: #667eea !important;
+        background: #f0eeff !important;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.25);
+      }
+
+      &.active {
+        border-color: #667eea !important;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+
+        .itemIcon,
+        .itemName,
+        .itemSize {
+          color: #fff !important;
+        }
+      }
+
+      .itemIcon {
+        font-size: 20px;
+        line-height: 1;
+      }
+
+      .itemInfo {
+        flex: 1;
+        min-width: 0;
+
+        .itemName {
+          font-size: 13px;
+          font-weight: 600;
+          color: #333;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        .itemSize {
+          font-size: 11px;
+          color: #999;
+          margin-top: 2px;
+        }
       }
     }
+
+    // 自定义尺寸输入
+    .customRow {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 14px;
+      padding: 12px 14px;
+      background: #f8f9fb;
+      border-radius: 8px;
+
+      .customLabel {
+        font-size: 13px;
+        color: #666;
+        white-space: nowrap;
+      }
+
+      .customInput {
+        flex: 1;
+      }
+
+      .sizeDivider {
+        color: #bbb;
+        font-size: 14px;
+        font-weight: 500;
+      }
+    }
+  }
+
+
+
+  // 画布尺寸编辑器弹窗样式
+  :global {
+    .canvas-size-modal {
+      .ant-modal-content {
+        padding: 0;
+        border-radius: 16px;
+        overflow: hidden;
+      }
+
+      .ant-modal-header {
+        padding: 20px 24px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border: none;
+        margin: 0;
+
+        .ant-modal-title {
+          color: white;
+          font-size: 16px;
+          font-weight: 600;
+        }
+      }
+
+      .ant-modal-body {
+        padding: 20px;
+      }
+
+      .ant-modal-footer {
+        padding: 16px 24px;
+        border-top: 1px solid #f0f0f0;
+      }
+
+      .ant-modal-close {
+        top: 16px;
+        right: 16px;
+
+        .ant-modal-close-x {
+          color: rgba(255, 255, 255, 0.8);
+        }
+      }
+    }
+  }
+}
+
+// 右键菜单（独立在 .center 外部，因为菜单通过 createPortal 渲染到 body）
+.contextMenu {
+  position: fixed;
+  background: #fff;
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+  padding: 4px 0;
+  min-width: 140px;
+  z-index: 999999;
+
+  .menuItem {
+    padding: 8px 16px;
+    font-size: 14px;
+    color: #333;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+
+    &:hover {
+      background: #f5f5f5;
+      color: #0057ff;
+    }
+  }
+
+  .menuItemWithSubmenu {
+    position: relative;
+    padding: 8px 16px;
+    font-size: 14px;
+    color: #333;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+
+    &:hover {
+      background: #f5f5f5;
+      color: #0057ff;
+
+      .submenu {
+        display: block;
+      }
+    }
+
+    .submenuArrow {
+      font-size: 10px;
+      color: #999;
+      margin-left: 8px;
+    }
+
+    .submenu {
+      display: none;
+      position: absolute;
+      left: 100%;
+      top: 0;
+      background: #fff;
+      border-radius: 6px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+      padding: 4px 0;
+      min-width: 140px;
+      z-index: 9999999;
+
+      .submenuItem {
+        padding: 8px 16px;
+        font-size: 14px;
+        color: #333;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        white-space: nowrap;
+
+        &:hover {
+          background: #f5f5f5;
+          color: #0057ff;
+        }
+      }
+
+      .submenuItemEmpty {
+        padding: 8px 16px;
+        font-size: 14px;
+        color: #999;
+        white-space: nowrap;
+        cursor: default;
+      }
+    }
+  }
+
+  .menuDivider {
+    height: 1px;
+    background: #e8e8e8;
+    margin: 4px 8px;
+  }
+}
+
+// 吸附辅助线
+.snapLinesLayer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 999999;
+
+  .snapLineH {
+    position: absolute;
+    left: 0;
+    width: 100%;
+    height: 1px;
+    background: #ff4d4f;
+    pointer-events: none;
+  }
+
+  .snapLineV {
+    position: absolute;
+    top: 0;
+    height: 100%;
+    width: 1px;
+    background: #ff4d4f;
+    pointer-events: none;
   }
 }

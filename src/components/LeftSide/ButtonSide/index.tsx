@@ -96,7 +96,9 @@ export default function ButtonSide() {
             draggable="true"
             onDragStart={(e) => onDragStart(e, { ...item, type: isButtonComponent })}
           >
-            <span style={item.style}>{item.props.text}</span>
+            <div className={leftSideStyles.preview}>
+              <span style={item.style}>{item.props.text}</span>
+            </div>
             <div className={leftSideStyles.desc}>{item.name}</div>
           </li>
         ))}
