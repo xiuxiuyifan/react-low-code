@@ -423,3 +423,52 @@
     pointer-events: none;
   }
 }
+
+// 自定义参考线
+.guideLine {
+  position: absolute;
+
+  &.guideLineH {
+    left: 0;
+    width: 100%;
+    height: 1px;
+    background: #0057ff;
+    cursor: ns-resize;
+
+    &::after {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: -3px;
+      width: 100%;
+      height: 7px;
+    }
+
+    &:hover {
+      height: 2px;
+      background: #0057ff;
+    }
+  }
+
+  &.guideLineV {
+    top: 0;
+    width: 1px;
+    height: 100%;
+    background: #0057ff;
+    cursor: ew-resize;
+
+    &::after {
+      content: '';
+      position: absolute;
+      left: -3px;
+      top: 0;
+      width: 7px;
+      height: 100%;
+    }
+
+    &:hover {
+      width: 2px;
+      background: #0057ff;
+    }
+  }
+}

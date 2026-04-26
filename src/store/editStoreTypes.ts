@@ -68,6 +68,13 @@ export interface ButtonComponent extends BaseComponent {
 // ==================== 组件联合类型 ====================
 export type AnyComponent = TextComponent | ImageComponent | ButtonComponent;
 
+// ==================== 参考线 ====================
+export interface GuideLine {
+  key: number;
+  direction: 'h' | 'v'; // h=horizontal(横向/Y轴), v=vertical(竖向/X轴)
+  position: number;     // h: y坐标, v: x坐标
+}
+
 // ==================== 画布 ====================
 export interface ICanvas {
   title: string;
@@ -81,6 +88,7 @@ export interface ICanvas {
     backgroundRepeat?: string;
   };
   cmps: AnyComponent[];
+  guideLines: GuideLine[];
 }
 
 // ==================== Store 类型 ====================
@@ -113,6 +121,10 @@ export type EditStoreAction = {
   moveCmpUp: (key: number) => void;  // 上移一层（数组索引 +1）
   moveCmpDown: (key: number) => void;  // 下移一层（数组索引 -1）
   alignCmp: (key: number, align: "centerX" | "centerY" | "top" | "bottom" | "left" | "right") => void; // 对齐画布
+  addGuideLine: (direction: 'h' | 'v') => void; // 添加参考线（默认居中）
+  updateGuideLine: (key: number, position: number) => void; // 更新参考线位置
+  deleteGuideLine: (key: number) => void; // 删除单条参考线
+  clearGuideLines: () => void; // 清除所有参考线
   recordHistory: () => void; // 记录当前画布快照到历史栈
   undo: () => void; // 撤销
   redo: () => void; // 重做

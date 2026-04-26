@@ -1064,3 +1064,340 @@ const snap = calcSnap(
 | 文件 | 变更说明 |
 |------|---------|
 | `src/pages/Layout/Center/index.tsx` | `calcSnap` 函数从单阈值重构为双阈值，统一搜索确保线位置与吸附位置一致 |
+
+---
+
+## 第七轮迭代：自定义参考线（可拖拽、可吸附、画布缩放自适应）
+
+### 一、功能概述
+
+本轮在画布布局层面引入了 **自定义参考线（GuideLine）** 功能，这是专业设计工具（如 Figma、Sketch）的核心能力之一：
+
+1. **添加参考线**：工具栏提供"横向参考线"和"竖向参考线"按钮，默认添加到画布中心位置。
+2. **拖拽移动参考线**：鼠标按住参考线可上下/左右拖动，实时改变位置。
+3. **移出自动清除**：拖拽参考线移出画布边界时，松开鼠标自动删除该参考线。
+4. **手动清除**：工具栏提供"清除参考线"按钮一键清空。
+5. **参与吸附**：组件拖拽时会自动吸附到参考线，与画布边缘、其他组件共用同一套双阈值逻辑。
+6. **画布缩放自适应**：参考线位置始终存储在**画布坐标系**中，视觉上通过 CSS `transform: scale()` 自动跟随缩放；拖拽时用 `delta / (zoom/100)` 换算，确保手感一致。
+
+### 二、核心实现细节
+
+#### 1. 数据结构
+
+**文件**：`src/store/editStoreTypes.ts`
+
+新增 `GuideLine` 类型，并作为 `ICanvas` 的子属性：
+
+```typescript
+export interface GuideLine {
+  key: number;
+  direction: 'h' | 'v'; // h=horizontal(横向/Y轴), v=vertical(竖向/X轴)
+  position: number;     // h: y坐标, v: x坐标
+}
+
+export interface ICanvas {
+  // ...原有字段
+  cmps: AnyComponent[];
+  guideLines: GuideLine[];  // 新增
+}
+```
+
+**文件**：`src/store/editStore.ts`
+
+四个新增 action：
+
+```typescript
+addGuideLine: (direction) => {
+  set((draft) => {
+    const pos = direction === 'h'
+      ? draft.canvas.style.height / 2
+      : draft.canvas.style.width / 2;
+    draft.canvas.guideLines.push({
+      key: getOnlyKey(),
+      direction,
+      position: pos,
+    });
+  });
+},
+
+updateGuideLine: (key, position) => {
+  set((draft) => {
+    const gl = draft.canvas.guideLines.find((g) => g.key === key);
+    if (gl) gl.position = position;
+  });
+},
+
+deleteGuideLine: (key) => {
+  set((draft) => {
+    draft.canvas.guideLines = draft.canvas.guideLines.filter((g) => g.key !== key);
+  });
+},
+
+clearGuideLines: () => {
+  set((draft) => {
+    draft.canvas.guideLines = [];
+  });
+},
+```
+
+初始化画布时 `guideLines: []`，确保既有项目打开不会报属性缺失。
+
+#### 2. 参考线渲染与拖拽
+
+**文件**：`src/pages/Layout/Center/index.tsx`
+
+新增 `GuideLineItem` 组件，核心思路：**位置以画布坐标存储，拖拽时消除缩放比例**。
+
+```typescript
+function GuideLineItem({
+  guide,
+  zoom,
+  canvasWidth,
+  canvasHeight,
+  onUpdate,
+  onDelete,
+}: {
+  guide: GuideLine;
+  zoom: number;
+  canvasWidth: number;
+  canvasHeight: number;
+  onUpdate: (key: number, pos: number) => void;
+  onDelete: (key: number) => void;
+}) {
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStartRef = useRef({ clientPos: 0, startPos: 0 });
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    dragStartRef.current = {
+      clientPos: guide.direction === 'h' ? e.clientY : e.clientX,
+      startPos: guide.position,
+    };
+    setIsDragging(true);
+  }, [guide.direction, guide.position]);
+
+  useEffect(() => {
+    if (!isDragging) return;
+    const scale = zoom / 100;
+    const key = guide.key;
+    const dir = guide.direction;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const delta =
+        dir === 'h'
+          ? (e.clientY - dragStartRef.current.clientPos) / scale
+          : (e.clientX - dragStartRef.current.clientPos) / scale;
+      const newPos = dragStartRef.current.startPos + delta;
+      onUpdate(key, newPos);
+    };
+
+    const handleMouseUp = () => {
+      setIsDragging(false);
+      // 拖拽结束后，若移出画布范围则自动删除
+      const state = useEditStore.getState();
+      const gl = state.canvas.guideLines.find((g) => g.key === key);
+      if (gl) {
+        const max = dir === 'h' ? canvasHeight : canvasWidth;
+        if (gl.position < 0 || gl.position > max) {
+          onDelete(key);
+        }
+      }
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDragging, guide.key, guide.direction, zoom, canvasWidth, canvasHeight, onUpdate, onDelete]);
+
+  const isH = guide.direction === 'h';
+  const style: React.CSSProperties = {
+    position: 'absolute',
+    left: isH ? 0 : guide.position,
+    top: isH ? guide.position : 0,
+    width: isH ? '100%' : 1,
+    height: isH ? 1 : '100%',
+    cursor: isH ? 'ns-resize' : 'ew-resize',
+    pointerEvents: 'auto',
+    zIndex: 99999,
+  };
+
+  return (
+    <div
+      className={`${styles.guideLine} ${isH ? styles.guideLineH : styles.guideLineV}`}
+      style={style}
+      onMouseDown={handleMouseDown}
+    />
+  );
+}
+```
+
+关键点：
+- `dragStartRef.current.clientPos` 记录鼠标按下的屏幕坐标（clientX/clientY）
+- `dragStartRef.current.startPos` 记录参考线当前在画布上的位置
+- `mousemove` 时用 `(e.clientX - startClient) / scale` 换算，**除以 zoom 比例**消除画布缩放带来的位移偏差
+- `mouseup` 时从 store 读取最新位置，判断是否越界，越界则删除
+
+#### 3. 画布渲染层
+
+参考线与吸附辅助线、组件位于同一画布容器内，天然跟随 `transform: scale()` 缩放：
+
+```tsx
+<div className={styles.canvas} ...>
+  {/* 组件层 */}
+  {canvas.cmps.map((cmp) => (
+    <ResizableComponent ... />
+  ))}
+
+  {/* 吸附辅助线（红色） */}
+  <div className={styles.snapLinesLayer}>
+    {snapLines.h.map((y, i) => (
+      <div key={`h-${i}`} className={styles.snapLineH} style={{ top: y }} />
+    ))}
+    {snapLines.v.map((x, i) => (
+      <div key={`v-${i}`} className={styles.snapLineV} style={{ left: x }} />
+    ))}
+  </div>
+
+  {/* 自定义参考线（蓝色） */}
+  {canvas.guideLines.map((gl) => (
+    <GuideLineItem
+      key={gl.key}
+      guide={gl}
+      zoom={zoom}
+      canvasWidth={canvas.style.width}
+      canvasHeight={canvas.style.height}
+      onUpdate={updateGuideLine}
+      onDelete={deleteGuideLine}
+    />
+  ))}
+</div>
+```
+
+#### 4. 参考线参与吸附
+
+`calcSnap` 新增 `guideLines` 参数，在收集吸附目标时把参考线加入：
+
+```typescript
+function calcSnap(
+  cmp: AnyComponent,
+  rawLeft: number,
+  rawTop: number,
+  canvas: { width: number; height: number },
+  otherCmps: AnyComponent[],
+  guideLines: GuideLine[] = [],   // 新增
+  thresholdShow = 12,
+  thresholdSnap = 3
+): SnapResult {
+  // ...
+  otherCmps.forEach((c) => { ... });
+
+  // 参考线加入吸附目标池
+  guideLines.forEach((gl) => {
+    if (gl.direction === 'h') hTargets.push(gl.position);
+    else vTargets.push(gl.position);
+  });
+
+  // ...后续统一搜索逻辑不变
+}
+```
+
+调用时传入 `canvas.guideLines`：
+
+```typescript
+const snap = calcSnap(
+  firstCmp,
+  rawLeft,
+  rawTop,
+  { width: canvas.style.width, height: canvas.style.height },
+  canvas.cmps.filter((c) => c.key !== firstCmp.key),
+  canvas.guideLines   // 新增
+);
+```
+
+这样参考线完全融入现有的双阈值吸附体系：
+- 组件边缘距离参考线 **< 12px** 时显示红色辅助线
+- 距离 **< 3px** 时自动吸附到参考线位置
+
+#### 5. 样式设计
+
+**文件**：`src/pages/Layout/Center/index.module.scss`
+
+参考线使用蓝色（`#0057ff`）与红色吸附线区分，并通过伪元素扩大热区：
+
+```scss
+.guideLine {
+  position: absolute;
+
+  &.guideLineH {
+    left: 0;
+    width: 100%;
+    height: 1px;
+    background: #0057ff;
+    cursor: ns-resize;
+
+    // 扩大可点击热区：横向线上下各 3px
+    &::after {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: -3px;
+      width: 100%;
+      height: 7px;
+    }
+
+    &:hover {
+      height: 2px;
+      background: #0057ff;
+    }
+  }
+
+  &.guideLineV {
+    top: 0;
+    width: 1px;
+    height: 100%;
+    background: #0057ff;
+    cursor: ew-resize;
+
+    // 扩大可点击热区：竖向线左右各 3px
+    &::after {
+      content: '';
+      position: absolute;
+      left: -3px;
+      top: 0;
+      width: 7px;
+      height: 100%;
+    }
+
+    &:hover {
+      width: 2px;
+      background: #0057ff;
+    }
+  }
+}
+```
+
+### 三、交互设计要点
+
+| 场景 | 行为 |
+|------|------|
+| 点击"横向参考线" | 在画布垂直中心（`y = height / 2`）添加一条蓝色横线 |
+| 点击"竖向参考线" | 在画布水平中心（`x = width / 2`）添加一条蓝色竖线 |
+| 拖拽参考线 | 跟随鼠标移动，实时更新 store 中的 `position` |
+| 画布缩放 50% | 视觉上参考线同步缩小；拖拽时通过 `/ scale` 换算，鼠标移动 100px 实际改变 200px 画布坐标 |
+| 参考线拖出画布 | 松开鼠标自动删除 |
+| 点击"清除参考线" | 一键删除所有参考线 |
+| 组件靠近参考线 | 与画布/组件共用同一套双阈值吸附逻辑（12px 显示线 / 3px 吸附）|
+
+### 四、文件变更清单
+
+| 文件 | 变更说明 |
+|------|---------|
+| `src/store/editStoreTypes.ts` | 新增 `GuideLine` 接口；`ICanvas` 新增 `guideLines` 属性；`StoreState` 新增 4 个 action 类型 |
+| `src/store/editStore.ts` | 实现 `addGuideLine`、`updateGuideLine`、`deleteGuideLine`、`clearGuideLines`；`getDefaultCanvas` 初始化 `guideLines: []` |
+| `src/pages/Layout/Center/index.tsx` | 新增 `GuideLineItem` 组件；工具栏新增 3 个参考线按钮；画布渲染层新增参考线列表；`calcSnap` 纳入参考线作为吸附目标 |
+| `src/pages/Layout/Center/index.module.scss` | 新增 `.guideLine`、`.guideLineH`、`.guideLineV` 样式及热区伪元素 |
+

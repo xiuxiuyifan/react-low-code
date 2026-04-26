@@ -222,6 +222,38 @@ const useEditStore = create(
         }
       });
     },
+
+    addGuideLine: (direction) => {
+      set((draft) => {
+        const pos = direction === 'h'
+          ? draft.canvas.style.height / 2
+          : draft.canvas.style.width / 2;
+        draft.canvas.guideLines.push({
+          key: getOnlyKey(),
+          direction,
+          position: pos,
+        });
+      });
+    },
+
+    updateGuideLine: (key, position) => {
+      set((draft) => {
+        const gl = draft.canvas.guideLines.find((g) => g.key === key);
+        if (gl) gl.position = position;
+      });
+    },
+
+    deleteGuideLine: (key) => {
+      set((draft) => {
+        draft.canvas.guideLines = draft.canvas.guideLines.filter((g) => g.key !== key);
+      });
+    },
+
+    clearGuideLines: () => {
+      set((draft) => {
+        draft.canvas.guideLines = [];
+      });
+    },
   }))
 );
 
@@ -240,5 +272,6 @@ function getDefaultCanvas(): ICanvas {
       backgroundRepeat: "no-repeat",
     },
     cmps: [],
+    guideLines: [],
   };
 }

@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { Button, InputNumber, Modal, message } from "antd";
 import { ZoomInOutlined, ZoomOutOutlined } from "@ant-design/icons";
 import useEditStore from "@/store/editStore";
-import type { AnyComponent, TextComponent, ImageComponent, ButtonComponent } from "@/store/editStoreTypes";
+import type { AnyComponent, TextComponent, ImageComponent, ButtonComponent, GuideLine } from "@/store/editStoreTypes";
 import styles from "./index.module.scss";
 
 // 计算附近组件（基于中心点距离，阈值 200px）
@@ -40,6 +40,7 @@ function calcSnap(
   rawTop: number,
   canvas: { width: number; height: number },
   otherCmps: AnyComponent[],
+  guideLines: GuideLine[] = [],
   thresholdShow = 12,
   thresholdSnap = 3
 ): SnapResult {
@@ -60,6 +61,11 @@ function calcSnap(
     const ct = c.style.top || 0;
     vTargets.push(cl, cl + cw2 / 2, cl + cw2);
     hTargets.push(ct, ct + ch2 / 2, ct + ch2);
+  });
+
+  guideLines.forEach((gl) => {
+    if (gl.direction === 'h') hTargets.push(gl.position);
+    else vTargets.push(gl.position);
   });
 
   // 统一搜索：先找 12px 内最佳线，再判断是否 <= 3px 进行吸附
@@ -94,6 +100,95 @@ function calcSnap(
     linesH: showY ? [showY.line] : [],
     linesV: showX ? [showX.line] : [],
   };
+}
+
+// 参考线组件（可拖拽移动）
+function GuideLineItem({
+  guide,
+  zoom,
+  canvasWidth,
+  canvasHeight,
+  onUpdate,
+  onDelete,
+}: {
+  guide: GuideLine;
+  zoom: number;
+  canvasWidth: number;
+  canvasHeight: number;
+  onUpdate: (key: number, pos: number) => void;
+  onDelete: (key: number) => void;
+}) {
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStartRef = useRef({ clientPos: 0, startPos: 0 });
+
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      e.preventDefault();
+      dragStartRef.current = {
+        clientPos: guide.direction === 'h' ? e.clientY : e.clientX,
+        startPos: guide.position,
+      };
+      setIsDragging(true);
+    },
+    [guide.direction, guide.position]
+  );
+
+  useEffect(() => {
+    if (!isDragging) return;
+    const scale = zoom / 100;
+    const key = guide.key;
+    const dir = guide.direction;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const delta =
+        dir === 'h'
+          ? (e.clientY - dragStartRef.current.clientPos) / scale
+          : (e.clientX - dragStartRef.current.clientPos) / scale;
+      const newPos = dragStartRef.current.startPos + delta;
+      onUpdate(key, newPos);
+    };
+
+    const handleMouseUp = () => {
+      setIsDragging(false);
+      // 获取最新位置判断是否移出画布
+      const state = useEditStore.getState();
+      const gl = state.canvas.guideLines.find((g) => g.key === key);
+      if (gl) {
+        const max = dir === 'h' ? canvasHeight : canvasWidth;
+        if (gl.position < 0 || gl.position > max) {
+          onDelete(key);
+        }
+      }
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDragging, guide.key, guide.direction, zoom, canvasWidth, canvasHeight, onUpdate, onDelete]);
+
+  const isH = guide.direction === 'h';
+  const style: React.CSSProperties = {
+    position: 'absolute',
+    left: isH ? 0 : guide.position,
+    top: isH ? guide.position : 0,
+    width: isH ? '100%' : 1,
+    height: isH ? 1 : '100%',
+    cursor: isH ? 'ns-resize' : 'ew-resize',
+    pointerEvents: 'auto',
+    zIndex: 99999,
+  };
+
+  return (
+    <div
+      className={`${styles.guideLine} ${isH ? styles.guideLineH : styles.guideLineV}`}
+      style={style}
+      onMouseDown={handleMouseDown}
+    />
+  );
 }
 
 // 可调整大小的组件包装
@@ -291,7 +386,8 @@ function ResizableComponent({
               rawLeft,
               rawTop,
               { width: canvas.style.width, height: canvas.style.height },
-              canvas.cmps.filter((c) => c.key !== firstCmp.key)
+              canvas.cmps.filter((c) => c.key !== firstCmp.key),
+              canvas.guideLines
             );
             deltaX += snap.deltaX;
             deltaY += snap.deltaY;
@@ -544,6 +640,10 @@ export default function Center() {
     setShowCanvasSizeEditor,
     updateCmpStyle,
     moveCmpToTop,
+    addGuideLine,
+    updateGuideLine,
+    deleteGuideLine,
+    clearGuideLines,
   } = useEditStore();
   const canvasRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -693,6 +793,15 @@ export default function Center() {
             重置
           </Button>
         </div>
+        <Button size="small" onClick={() => addGuideLine('h')}>
+          横向参考线
+        </Button>
+        <Button size="small" onClick={() => addGuideLine('v')}>
+          竖向参考线
+        </Button>
+        <Button size="small" onClick={clearGuideLines}>
+          清除参考线
+        </Button>
         <Button size="small" onClick={() => setShowCanvasSizeEditor(true)}>
           画布尺寸
         </Button>
@@ -733,6 +842,18 @@ export default function Center() {
               <div key={`v-${i}`} className={styles.snapLineV} style={{ left: x }} />
             ))}
           </div>
+          {/* 自定义参考线 */}
+          {canvas.guideLines.map((gl) => (
+            <GuideLineItem
+              key={gl.key}
+              guide={gl}
+              zoom={zoom}
+              canvasWidth={canvas.style.width}
+              canvasHeight={canvas.style.height}
+              onUpdate={updateGuideLine}
+              onDelete={deleteGuideLine}
+            />
+          ))}
         </div>
       </div>
 
