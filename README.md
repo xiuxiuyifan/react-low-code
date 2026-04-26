@@ -696,3 +696,371 @@ Store 中新增 `batchUpdateCmpStyle(updates)`，在一次 Immer `set` 中批量
 | `src/pages/Layout/right/index.tsx` | 适配多选状态显示，属性修改前记录历史 |
 | `src/store/editStore.ts` | 新增 history 栈、undo/redo、recordHistory、batchUpdateCmpStyle、deleteSelectedCmps、clearSelection、多选 selectCmp |
 | `src/store/editStoreTypes.ts` | 新增对应类型：history、undo、redo、recordHistory、batchUpdateCmpStyle、deleteSelectedCmps、clearSelection |
+
+---
+
+## 第五轮迭代：组件对齐画布 + 拖拽吸附辅助线
+
+### 一、新增功能概述
+
+本轮在画布精确布局层面做了两项核心增强：
+
+1. **组件对齐画布**：右键菜单新增"水平居中"、"垂直居中"、"对齐画布"（顶部/底部/左侧/右侧），一键将单个组件对齐到画布对应位置。
+2. **拖拽吸附辅助线**：单选拖拽组件时，当组件边缘靠近画布边缘、画布中心线或其他组件边缘时，自动吸附并显示红色辅助线（阈值 5px）。
+
+### 二、核心实现细节
+
+#### 1. 对齐画布
+
+**文件**：`src/store/editStore.ts`、`src/store/editStoreTypes.ts`
+
+Store 中新增 `alignCmp(key, align)` action：
+
+```typescript
+alignCmp: (key, align) => {
+  set((draft) => {
+    const cmp = draft.canvas.cmps.find((c) => c.key === key);
+    if (!cmp) return;
+    const cw = draft.canvas.style.width;
+    const ch = draft.canvas.style.height;
+    const w = cmp.style.width || 0;
+    const h = cmp.style.height || 0;
+    switch (align) {
+      case "centerX":
+        cmp.style.left = (cw - w) / 2;
+        break;
+      case "centerY":
+        cmp.style.top = (ch - h) / 2;
+        break;
+      case "top":
+        cmp.style.top = 0;
+        break;
+      case "bottom":
+        cmp.style.top = ch - h;
+        break;
+      case "left":
+        cmp.style.left = 0;
+        break;
+      case "right":
+        cmp.style.left = cw - w;
+        break;
+    }
+  });
+},
+```
+
+对齐前调用方显式调用 `recordHistory()`，支持撤销还原。
+
+右键菜单中，仅在单选状态下显示对齐选项（多选时隐藏）：
+
+```typescript
+{(() => {
+  const { selectedComponentKeys } = useEditStore.getState();
+  if (selectedComponentKeys.length > 1) return null;
+  return (
+    <>
+      <div className={styles.menuItem} onClick={() => handleAlign("centerX")}>水平居中</div>
+      <div className={styles.menuItem} onClick={() => handleAlign("centerY")}>垂直居中</div>
+      <div className={styles.menuItemWithSubmenu}>
+        <span>对齐画布</span>
+        <span className={styles.submenuArrow}>▶</span>
+        <div className={styles.submenu}>
+          <div className={styles.submenuItem} onClick={() => handleAlign("top")}>顶部</div>
+          <div className={styles.submenuItem} onClick={() => handleAlign("bottom")}>底部</div>
+          <div className={styles.submenuItem} onClick={() => handleAlign("left")}>左侧</div>
+          <div className={styles.submenuItem} onClick={() => handleAlign("right")}>右侧</div>
+        </div>
+      </div>
+      <div className={styles.menuDivider} />
+    </>
+  );
+})()}
+```
+
+#### 2. 拖拽吸附辅助线
+
+**文件**：`src/pages/Layout/Center/index.tsx`、`src/pages/Layout/Center/index.module.scss`
+
+##### 吸附计算函数 `calcSnap`
+
+以当前组件的实时位置为基准，计算与所有吸附目标的最近距离：
+
+```typescript
+function calcSnap(
+  cmp: AnyComponent,
+  rawLeft: number,
+  rawTop: number,
+  canvas: { width: number; height: number },
+  otherCmps: AnyComponent[],
+  threshold = 5
+): SnapResult {
+  const w = cmp.style.width || 0;
+  const h = cmp.style.height || 0;
+  const rawRight = rawLeft + w;
+  const rawBottom = rawTop + h;
+  const rawCenterX = rawLeft + w / 2;
+  const rawCenterY = rawTop + h / 2;
+
+  // 收集所有垂直/水平吸附目标
+  const vTargets = [0, canvas.width / 2, canvas.width];
+  const hTargets = [0, canvas.height / 2, canvas.height];
+
+  otherCmps.forEach((c) => {
+    const cw2 = c.style.width || 0;
+    const ch2 = c.style.height || 0;
+    const cl = c.style.left || 0;
+    const ct = c.style.top || 0;
+    vTargets.push(cl, cl + cw2 / 2, cl + cw2);
+    hTargets.push(ct, ct + ch2 / 2, ct + ch2);
+  });
+
+  // 在 X/Y 方向分别寻找最佳吸附（差值最小且小于阈值）
+  let bestSnapX: { delta: number; line: number } | null = null;
+  for (const val of [rawLeft, rawCenterX, rawRight]) {
+    for (const target of vTargets) {
+      const diff = target - val;
+      if (Math.abs(diff) <= threshold) {
+        if (!bestSnapX || Math.abs(diff) < Math.abs(bestSnapX.delta)) {
+          bestSnapX = { delta: diff, line: target };
+        }
+      }
+    }
+  }
+
+  let bestSnapY: { delta: number; line: number } | null = null;
+  for (const val of [rawTop, rawCenterY, rawBottom]) {
+    for (const target of hTargets) {
+      const diff = target - val;
+      if (Math.abs(diff) <= threshold) {
+        if (!bestSnapY || Math.abs(diff) < Math.abs(bestSnapY.delta)) {
+          bestSnapY = { delta: diff, line: target };
+        }
+      }
+    }
+  }
+
+  return {
+    deltaX: bestSnapX ? bestSnapX.delta : 0,
+    deltaY: bestSnapY ? bestSnapY.delta : 0,
+    linesH: bestSnapY ? [bestSnapY.line] : [],
+    linesV: bestSnapX ? [bestSnapX.line] : [],
+  };
+}
+```
+
+##### 拖拽时集成吸附
+
+在 `ResizableComponent` 的 `mousemove` 中，仅在**单选**时启用吸附（多选批量移动暂不开启，避免多条辅助线冲突）：
+
+```typescript
+if (isMoving) {
+  let deltaX = (e.clientX - ms.x) / scale;
+  let deltaY = (e.clientY - ms.y) / scale;
+
+  if (ms.items.length === 1) {
+    const state = useEditStore.getState();
+    const { canvas } = state;
+    const firstItem = ms.items[0];
+    const firstCmp = canvas.cmps.find((c) => c.key === firstItem.key);
+    if (firstCmp) {
+      const rawLeft = firstItem.left + deltaX;
+      const rawTop = firstItem.top + deltaY;
+      const snap = calcSnap(
+        firstCmp,
+        rawLeft,
+        rawTop,
+        { width: canvas.style.width, height: canvas.style.height },
+        canvas.cmps.filter((c) => c.key !== firstCmp.key)
+      );
+      deltaX += snap.deltaX;
+      deltaY += snap.deltaY;
+      onSnapChange?.({ h: snap.linesH, v: snap.linesV });
+    }
+  } else {
+    onSnapChange?.({ h: [], v: [] });
+  }
+
+  const updates = ms.items.map((item) => ({
+    key: item.key,
+    style: { left: item.left + deltaX, top: item.top + deltaY },
+  }));
+  useEditStore.getState().batchUpdateCmpStyle(updates);
+}
+```
+
+##### 辅助线渲染
+
+辅助线直接渲染在 `.canvas` div 内部，利用 CSS `transform: scale()` 自动跟随画布缩放：
+
+```tsx
+{/* 吸附辅助线 */}
+<div className={styles.snapLinesLayer}>
+  {snapLines.h.map((y, i) => (
+    <div key={`h-${i}`} className={styles.snapLineH} style={{ top: y }} />
+  ))}
+  {snapLines.v.map((x, i) => (
+    <div key={`v-${i}`} className={styles.snapLineV} style={{ left: x }} />
+  ))}
+</div>
+```
+
+```scss
+.snapLinesLayer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 999999;
+
+  .snapLineH {
+    position: absolute;
+    left: 0;
+    width: 100%;
+    height: 1px;
+    background: #ff4d4f;
+  }
+
+  .snapLineV {
+    position: absolute;
+    top: 0;
+    height: 100%;
+    width: 1px;
+    background: #ff4d4f;
+  }
+}
+```
+
+辅助线状态 `snapLines` 由 `Center` 组件统一管理，通过 `onSnapChange` prop 传递给每个 `ResizableComponent`。`handleMouseUp` 时清空辅助线。
+
+### 三、文件变更清单
+
+| 文件 | 变更说明 |
+|------|---------|
+| `src/store/editStoreTypes.ts` | 新增 `alignCmp` 类型定义 |
+| `src/store/editStore.ts` | 实现 `alignCmp` 对齐画布 action |
+| `src/pages/Layout/Center/index.tsx` | 新增 `calcSnap` 吸附计算、拖拽时单选吸附、右键菜单对齐选项、辅助线回调与渲染 |
+| `src/pages/Layout/Center/index.module.scss` | 新增 `.snapLinesLayer`、`.snapLineH`、`.snapLineV` 辅助线样式 |
+
+---
+
+## 第六轮迭代：吸附线双阈值精细化
+
+### 一、优化概述
+
+本轮对拖拽吸附辅助线进行了体验层面的精细化调整，将原来的**单阈值吸附**改为**双阈值策略**：
+
+- **差值 < 12px**：显示红色吸附辅助线，提示用户附近有可对齐的目标
+- **差值 < 3px**：自动吸附对齐，组件位置会被"吸"到目标位置
+- **3px ~ 12px**：只显示线、不强制吸附，给用户保留自由微调的空间
+
+这样避免了原来「一靠近就强制吸附」带来的生硬感，同时也让吸附线在更早的距离就开始提示用户。
+
+### 二、核心代码变更
+
+**文件**：`src/pages/Layout/Center/index.tsx`
+
+#### 1. `calcSnap` 函数重构
+
+原来只有一个 `threshold = 5` 参数，满足阈值就同时显示线 + 吸附：
+
+```typescript
+// 旧版：单阈值，<= 5px 同时显示线并吸附
+function calcSnap(
+  cmp: AnyComponent,
+  rawLeft: number,
+  rawTop: number,
+  canvas: { width: number; height: number },
+  otherCmps: AnyComponent[],
+  threshold = 5
+): SnapResult {
+  // ...
+  if (Math.abs(diff) <= threshold) {
+    // 同时作为"显示线"和"吸附"的判断标准
+  }
+}
+```
+
+新版拆分为两个独立阈值，并且**统一搜索**确保吸附线显示的位置和实际吸附的位置始终是同一个目标：
+
+```typescript
+function calcSnap(
+  cmp: AnyComponent,
+  rawLeft: number,
+  rawTop: number,
+  canvas: { width: number; height: number },
+  otherCmps: AnyComponent[],
+  thresholdShow = 12,  // 显示线阈值
+  thresholdSnap = 3    // 吸附阈值
+): SnapResult {
+  // ...收集吸附目标（画布边缘/中心 + 其他组件边缘/中心）
+
+  // 统一搜索：先找 12px 内最佳线
+  let showX: { line: number; diff: number } | null = null;
+  for (const val of [rawLeft, rawCenterX, rawRight]) {
+    for (const target of vTargets) {
+      const diff = target - val;
+      if (Math.abs(diff) <= thresholdShow) {
+        if (!showX || Math.abs(diff) < Math.abs(showX.diff)) {
+          showX = { line: target, diff };
+        }
+      }
+    }
+  }
+
+  let showY: { line: number; diff: number } | null = null;
+  for (const val of [rawTop, rawCenterY, rawBottom]) {
+    for (const target of hTargets) {
+      const diff = target - val;
+      if (Math.abs(diff) <= thresholdShow) {
+        if (!showY || Math.abs(diff) < Math.abs(showY.diff)) {
+          showY = { line: target, diff };
+        }
+      }
+    }
+  }
+
+  // 只有最佳线的差值 <= 3px 时才真正吸附
+  return {
+    deltaX: showX && Math.abs(showX.diff) <= thresholdSnap ? showX.diff : 0,
+    deltaY: showY && Math.abs(showY.diff) <= thresholdSnap ? showY.diff : 0,
+    linesH: showY ? [showY.line] : [],
+    linesV: showX ? [showX.line] : [],
+  };
+}
+```
+
+关键点：
+- `showX/showY` 记录的是 **12px 内差值最小** 的那条对齐目标，以及实际差值
+- `deltaX/deltaY` 仅在 `Math.abs(diff) <= 3` 时才非零，否则为 0（不吸附）
+- `linesH/linesV` 在 `12px` 内就会返回，因此线会提前出现提示用户
+- 如果某个方向上同时存在多个可吸附目标（比如左边缘差 2px、右边缘差 8px），算法会优先选差值最小的（2px），确保吸附到最近目标
+
+#### 2. 调用方式不变
+
+```typescript
+const snap = calcSnap(
+  firstCmp,
+  rawLeft,
+  rawTop,
+  { width: canvas.style.width, height: canvas.style.height },
+  canvas.cmps.filter((c) => c.key !== firstCmp.key)
+  // thresholdShow 和 thresholdSnap 使用默认值 12 和 3
+);
+```
+
+### 三、交互行为对比
+
+| 场景 | 旧版（单阈值 5px） | 新版（双阈值 12px/3px） |
+|------|-------------------|------------------------|
+| 距离目标 10px | 无任何提示 | 显示红色辅助线，自由微调 |
+| 距离目标 4px | 突然吸附，容易过头 | 显示线但不吸附，可精确控制 |
+| 距离目标 2px | 吸附 | 吸附，行为一致 |
+| 多选拖拽 | 不显示线 | 不显示线（保持原有逻辑）|
+
+### 四、文件变更清单
+
+| 文件 | 变更说明 |
+|------|---------|
+| `src/pages/Layout/Center/index.tsx` | `calcSnap` 函数从单阈值重构为双阈值，统一搜索确保线位置与吸附位置一致 |

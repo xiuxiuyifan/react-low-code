@@ -25,6 +25,8 @@ function getNearbyCmps(currentCmp: AnyComponent, allCmps: AnyComponent[], thresh
 }
 
 // 吸附计算
+// thresholdShow = 12: 差值小于 12px 时显示吸附线
+// thresholdSnap = 3:  差值小于 3px 时自动对齐吸附
 interface SnapResult {
   deltaX: number;
   deltaY: number;
@@ -38,7 +40,8 @@ function calcSnap(
   rawTop: number,
   canvas: { width: number; height: number },
   otherCmps: AnyComponent[],
-  threshold = 5
+  thresholdShow = 12,
+  thresholdSnap = 3
 ): SnapResult {
   const w = cmp.style.width || 0;
   const h = cmp.style.height || 0;
@@ -59,35 +62,37 @@ function calcSnap(
     hTargets.push(ct, ct + ch2 / 2, ct + ch2);
   });
 
-  let bestSnapX: { delta: number; line: number } | null = null;
+  // 统一搜索：先找 12px 内最佳线，再判断是否 <= 3px 进行吸附
+  // 这样吸附线显示的位置和实际吸附的位置始终是同一个目标
+  let showX: { line: number; diff: number } | null = null;
   for (const val of [rawLeft, rawCenterX, rawRight]) {
     for (const target of vTargets) {
       const diff = target - val;
-      if (Math.abs(diff) <= threshold) {
-        if (!bestSnapX || Math.abs(diff) < Math.abs(bestSnapX.delta)) {
-          bestSnapX = { delta: diff, line: target };
+      if (Math.abs(diff) <= thresholdShow) {
+        if (!showX || Math.abs(diff) < Math.abs(showX.diff)) {
+          showX = { line: target, diff };
         }
       }
     }
   }
 
-  let bestSnapY: { delta: number; line: number } | null = null;
+  let showY: { line: number; diff: number } | null = null;
   for (const val of [rawTop, rawCenterY, rawBottom]) {
     for (const target of hTargets) {
       const diff = target - val;
-      if (Math.abs(diff) <= threshold) {
-        if (!bestSnapY || Math.abs(diff) < Math.abs(bestSnapY.delta)) {
-          bestSnapY = { delta: diff, line: target };
+      if (Math.abs(diff) <= thresholdShow) {
+        if (!showY || Math.abs(diff) < Math.abs(showY.diff)) {
+          showY = { line: target, diff };
         }
       }
     }
   }
 
   return {
-    deltaX: bestSnapX ? bestSnapX.delta : 0,
-    deltaY: bestSnapY ? bestSnapY.delta : 0,
-    linesH: bestSnapY ? [bestSnapY.line] : [],
-    linesV: bestSnapX ? [bestSnapX.line] : [],
+    deltaX: showX && Math.abs(showX.diff) <= thresholdSnap ? showX.diff : 0,
+    deltaY: showY && Math.abs(showY.diff) <= thresholdSnap ? showY.diff : 0,
+    linesH: showY ? [showY.line] : [],
+    linesV: showX ? [showX.line] : [],
   };
 }
 
